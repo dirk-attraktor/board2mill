@@ -30,9 +30,9 @@ bridges=2		# (mm)     Add bridges with the given width to the outline cut.  --br
 
 ## OTHER ##
 metric=1		# (bool)   Use metric units for parameters. Does not affect output code
-metricoutput=1 		# (bool)   Use metric units for output code
+metricoutput=1		# (bool)   Use metric units for output code
 zero-start=1		# (bool)   Set the starting point of the project at (0,0). With this option, the projet will be between (0,0) and (max_x_value, max_y_value) (positive values)
-mirror-absolute=1       # (bool)   Mirror operations on the back side along the Y axis instead of the board center, which is the default
+mirror-absolute=1	# (bool)   Mirror operations on the back side along the Y axis instead of the board center, which is the default
 
 "
 
@@ -47,12 +47,12 @@ if [ -f "$importfile" ] ; then
 	# Möglicherweise existiert der Ordner schon
 	if [ -d "$importfile-files" ]; then
 		echo "Der Ordner '$importfile-files' existiert bereits!";
-		zenity --question --text="Der Ordner\n'$importfile-files'\nexistiert bereits!\nOrdner löschen?" --title="Fehler!" --ok-label="Ja" --cancel-label="Nein";
+		zenity --width 800 --question --text="Der Ordner\n'$importfile-files'\nexistiert bereits!\nOrdner löschen?" --title="Fehler!" --ok-label="Ja" --cancel-label="Nein";
 		if [ $? == 0 ]; then
 			rm -rf "$importfile-files";
 		else
 			echo "Abbruch.";
-			zenity --error --text="Abbruch." --title="Abbruch"
+			zenity  --width 800 --error --text="Abbruch." --title="Abbruch"
 			exit 1;
 		fi
 	fi
@@ -63,6 +63,17 @@ if [ -f "$importfile" ] ; then
 	cp "$importfile" "$importfile-files/pcb"	# Kopie der Eingabedatei reinwerfen
 
 	echo "$PARAMETERS" > millproject
+	
+
+	# Seite auswählen
+	selected_side=$(zenity  --width 800 --height 400 --list   --title="Seite auswählen" --text "Platinenseite auswählen" --column="Seite"  --column="Beschreibung" "Front" "Nur Vorderseite herstellen" "Back" "Nur Rückseite herstellen" "Beidseitig" "Reihenfolge beachten: Front, Back, Drill, Outline")
+	side="back"	
+	if [ $selected_side == "Front" ]; then
+		side="front"
+	fi
+	echo "cut-side=$side"   >> millproject; 
+	echo "drill-side=$side" >> millproject; 
+
 
 	# Platinen dicke
 	pcb_thickness=$(zenity --scale --title="Platinen Dicke" --text="Platinen Dicke:\nTypischer Wert: 16 (1.6 mm)\n" --value=16 --min-value=2 --max-value=40)
@@ -77,7 +88,7 @@ if [ -f "$importfile" ] ; then
 	echo "offset=$offset" >> millproject; 
 
 	# Milldrill einschalten?
-	zenity --question --text="Löcher fräsen oder bohren? \n" --title="Milldrill einschalten?" --ok-label="Fräsen" --cancel-label="Bohren";
+	zenity --width 600 --question --text="Löcher fräsen oder bohren? \n" --title="Milldrill einschalten?" --ok-label="Fräsen" --cancel-label="Bohren";
 	if [ $? == 0 ]; then
 		echo "milldrill=1" >> millproject; # Milldrill an
 		md_diameter=$(zenity --scale --title="Fräser Durchmesser" --text="Durchmesser des Loch Fräsers?\nTypischer Wert: 8 (0.8 mm)\n" --value=8 --min-value=4 --max-value=20)
@@ -125,7 +136,7 @@ if [ -f "$importfile" ] ; then
 		echo 83;
 		$EAGLE -X -O+ -dPS		-ofront_stop.ps	pcb.brd tStop Dimension >&2;
 		echo 100;
-		) | zenity --progress --title="[EAGLE] Konvertiere..." --text="Aus EAGLE-Board-Dateien werden Gerber-Dateien generiert..." --auto-close;
+		) | zenity   --progress --title="[EAGLE] Konvertiere..." --text="Aus EAGLE-Board-Dateien werden Gerber-Dateien generiert..." --auto-close;
 
 
 		# Gerber zu G-Code
@@ -134,18 +145,14 @@ if [ -f "$importfile" ] ; then
 		echo 10;
 		PCB2GCODE --outline outline.cnc --back back.cnc --front front.cnc --drill drill.cnc >&2;
 		echo 100;
-		) | zenity --progress --title="[pcb2gcode] Konvertiere..." --text="Aus Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
+		) | zenity   --progress --title="[pcb2gcode] Konvertiere..." --text="Aus Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
 
 
 	elif [ ${importfile##*\.} == "fzz" ]; then	# Fritzing-Paket *.fzz
-
-		# Fritzing-Paket auspacken (darin befindet sich eine .fz-Datei)
-		# (muss ausgepackt werden, damit Fritzing das beim Start nicht macht und nachfrägt)
 		unzip ./pcb
 
 		name=$(ls ./*.fz);
 		name="${name%\.*}";
-		# Fritzing-Paket richtig umbenennen
 		mv ./pcb "./pcb.fzz"
 		mv ./$name.fz "./pcb.fz"
 
@@ -174,7 +181,7 @@ if [ -f "$importfile" ] ; then
 		echo 10; # Damit die Progressbar pulsiert
 		python "$SCRIPTPATH/kicad2gerber.py" pcb.kicad_pcb  >&2; # Ich schreibe das dreckigerweise mal auf STDERR, damit das im Terminal und nicht im Zenity landet
 		echo 100; # Damit Zenity schließt
-		) | zenity --progress --title="[Fritzing] Konvertiere..." --text="Aus dem Fritzing-Paket werden Gerber-Dateien generiert..." --pulsate --auto-close;
+		) | zenity --progress --title="[Fritzing] Konvertiere..." --text="Aus dem kicad-Paket werden Gerber-Dateien generiert..." --pulsate --auto-close;
 
 		# Gerber in G-Code umwandeln
 		echo "\nGerber-Dateien werden zu G-Code konvertiert..."
@@ -182,40 +189,32 @@ if [ -f "$importfile" ] ; then
 		echo 10;
 		$PCB2GCODE --outline "pcb.gml" --back "pcb.gbl" --front "pcb.gtl" --drill "pcb.txt";
 		echo 100;
-		) | zenity --progress --title="[pcb2gcode] Konvertiere..." --text="Aus den Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
+		) | zenity  --progress --title="[pcb2gcode] Konvertiere..." --text="Aus den Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
 
 
 	else
 		echo "Bitte eine EAGLE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen.";
-		zenity --error --text="Bitte eine EAGLE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen." --title="Fehler"
+		zenity  --width 600 --error --text="Bitte eine EAGLE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen." --title="Fehler"
 		exit 1
 	fi
 
 	if [ "$1" != "--debug" ]; then
-		echo "Aufräumen..."
-		# remove temporary files
-		rm -f pcb.* 
-		rm -f *.cnc
-		rm -f *.gpi
-		rm -f *.png
-		rm -f *.svg
-		rm -f *.zip
-		rm -f  millproject
+		rm -f pcb.* *.cnc *.gpi *.png *.svg *.zip *.fzp *.ino pcb_*.* millproject
 	fi
 
-	mv back.ngc back.gcode
-	mv front.ngc front.gcode
-	mv outline.ngc outline.gcode
-	mv milldrill.ngc milldrill.gcode
-	mv drill.ngc drill.gcode
+	mv back.ngc       back.gcode
+	mv front.ngc      front.gcode
+	mv outline.ngc    outline.gcode
+	mv milldrill.ngc  milldrill.gcode
+	mv drill.ngc      drill.gcode
 
-	zenity --question --text="Fertig. Beinhaltenden Ordner öffnen?" --title="Fertig." --ok-label="Ja" --cancel-label="Nein";
+	zenity  --width 600  --question --text="Fertig. Beinhaltenden Ordner öffnen?" --title="Fertig." --ok-label="Ja" --cancel-label="Nein";
 	if [ $? == 0 ]; then
 		nautilus "$importfile-files" &
 	fi
 
 else
 	echo "Die angegebene Datei existiert nicht. Abbruch.";
-	zenity --error --text="Die angegebene Datei existiert nicht. Abbruch." --title="Fehler"
+	zenity  --width 600  --error --text="Die angegebene Datei existiert nicht. Abbruch." --title="Fehler"
 fi
 
