@@ -1,12 +1,10 @@
 #!/bin/bash
 
-
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
 cd ~/Desktop/
 
-
-export EAGLE="/opt/eagle-9.6.2/eagle"
+export EAGLEEXE="/opt/eagle-9.6.2/eagle"  # dont name this EAGLE, or eagle breaks
 export FRITZING="/usr/bin/Fritzing"
 export PCB2GCODE="/usr/local/bin/pcb2gcode"
 
@@ -16,9 +14,10 @@ export PARAMETERS="
 zsafe=5			# (mm)     Z-coordinate for movements between engraving steps
 mill-feed=1100	 	# (mm/min) Feedrate at which engraving takes place (horizontal speed)
 mill-speed=20000 	# (rpm)    Spindle speed during engraving
+mill-diameters=0.1       # (mm)     Diameters of mill bits, used in the order that they are provided.  
 
 ## DRILLING ##
-zchange=30		# (mm)     Z-coordinate for movements with the drill head
+zchange=10		# (mm)     Z-coordinate for movements with the drill head
 drill-feed=100		# (mm/min) Feed rate for drilling (vertical speed)
 drill-speed=20000	# (rpm)    Spindle speed during drilling (rounds per minute)
 
@@ -37,9 +36,13 @@ mirror-absolute=1	# (bool)   Mirror operations on the back side along the Y axis
 "
 
 
+if [ "$1" == "--debug" ]; then
+	set -x
+fi
 
 # Dialog: Datei auswählen
-importfile=$(zenity --title="Zu konvertierende Datei auswählen" --file-selection --file-filter="Alle unterstützten | *.brd *.fzz *.kicad_pcb" --file-filter="EAGLE board file (*.brd) | *.brd" --file-filter="Fritzing-Paket (*.fzz) | .fzz" --file-filter="KiCAD board file (*.kicad_pcb) | *.kicad_pcb");
+importfile=$(zenity --title="Zu konvertierende Datei auswählen" --file-selection --file-filter="Alle unterstützten | *.brd *.fzz *.kicad_pcb" --file-filter="EAGLEEXE board file (*.brd) | *.brd" --file-filter="Fritzing-Paket (*.fzz) | .fzz" --file-filter="KiCAD board file (*.kicad_pcb) | *.kicad_pcb");
+
 
 # ausgewählte Datei muss existieren
 if [ -f "$importfile" ] ; then
@@ -77,14 +80,14 @@ if [ -f "$importfile" ] ; then
 
 	# Platinen dicke
 	pcb_thickness=$(zenity --scale --title="Platinen Dicke" --text="Platinen Dicke:\nTypischer Wert: 16 (1.6 mm)\n" --value=16 --min-value=2 --max-value=40)
-	zdrill=$(echo - | awk "{ print $pcb_thickness/10}")
-	zcut=$(echo - | awk "{ print $pcb_thickness/10}")
+	zdrill=$(echo - | awk "{ print $pcb_thickness/10}" | sed s/","/"."/g)
+	zcut=$(echo - | awk "{ print $pcb_thickness/10}" | sed s/","/"."/g)
 	echo "zdrill=-$zdrill" >> millproject; 
 	echo "zcut=-$zcut"     >> millproject; 
 
 	# offset einlesen (Leiterbahnen aufblasen)
 	offset=$(zenity --scale --title="Leiterbahnen aufblasen" --text="Wie viel mm sollen die Leiterbahnen aufgeblasen werden?\nTypischer Werte:\n\tSMD: 5 (0.5 mm)\n\tNormal: 23 (2.3 mm)" --value=23 --min-value=0 --max-value=200)
-	offset=$(echo - | awk "{ print $offset/10}")
+	offset=$(echo - | awk "{ print $offset/10}" | sed s/","/"."/g)
 	echo "offset=$offset" >> millproject; 
 
 	# Milldrill einschalten?
@@ -92,65 +95,67 @@ if [ -f "$importfile" ] ; then
 	if [ $? == 0 ]; then
 		echo "milldrill=1" >> millproject; # Milldrill an
 		md_diameter=$(zenity --scale --title="Fräser Durchmesser" --text="Durchmesser des Loch Fräsers?\nTypischer Wert: 8 (0.8 mm)\n" --value=8 --min-value=4 --max-value=20)
-		md_diameter=$(echo - | awk "{ print $md_diameter/10}")	
+		md_diameter=$(echo - | awk "{ print $md_diameter/10}" | sed s/","/"."/g)	
 		echo "milldrill-diameter=$md_diameter" >> millproject;
 	fi
 
 	# Gravurtiefe
 	zwork=$(zenity --scale --title="Gravur Tiefe" --text="Gravurtiefe einstellen.\nTypischer Wert: 10 (0.10 mm) Max: 100 (1.00mm)" --value=10 --min-value=1 --max-value=100)
-	zwork=$(echo - | awk "{ print $zwork/100}")
+	zwork=$(echo - | awk "{ print $zwork/100}" | sed s/","/"."/g)
 	echo "zwork=-$zwork" >> millproject; 
 
 	# Durchmesser zum outline Fräsen
 	cutter_diameter=$(zenity --scale --title="Ausfräser Durchmesser" --text="Durchmesser des Outline Fräsers.\nTypischer Wert: 20 (2 mm)" --value=20 --min-value=10 --max-value=40)
-	cutter_diameter=$(echo - | awk "{ print $cutter_diameter/10}")
-	cutter_infeed=$(echo - | awk "{ print $cutter_diameter/2}")
+	cutter_diameter=$(echo - | awk "{ print $cutter_diameter/10}" | sed s/","/"."/g)
+	cutter_infeed=$(echo - | awk "{ print $cutter_diameter/2}" | sed s/","/"."/g)
 	echo "cutter-diameter=$cutter_diameter" >> millproject
 	echo "cut-infeed=$cutter_infeed"        >> millproject; 
 
 	# Anzahl brücken 
 	bridgesnum=$(zenity --scale --title="Brücken Anzahl" --text="Haltestege in Outline einfügen. Anzahl:" --value=0 --min-value=0 --max-value=10)
-	zbridges=$(echo - | awk "{ print $zcut/2 }")
+	zbridges=$(echo - | awk "{ print $zcut/2 }" | sed s/","/"."/g)
 	echo "bridgesnum=$bridgesnum" >> millproject; 
 	echo "zbridges=-$zbridges"    >> millproject; 
 
 
 	# Um was für eine Datei handelt es sich denn überhaupt?
-	if [ ${importfile##*\.} == "brd" ]; then	# EAGLE-Datei *.brd
+	if [ ${importfile##*\.} == "brd" ]; then	# EAGLEEXE-Datei *.brd
 
 		mv ./pcb ./pcb.brd
-
-		# EAGLE board Datei zu Gerber
-		echo "EAGLE board file wird zu Gerber-Dateien konvertiert..."
+		
+		# EAGLEEXE board Datei zu Gerber
+		echo "EAGLEEXE board file wird zu Gerber-Dateien konvertiert..."
 		(
 		echo 0;
-		$EAGLE -X -O+ -dGERBER_RS274X	-oback.cnc	pcb.brd Bot Pads Vias >&2;
+		$EAGLEEXE -X -O+ -dGERBER_RS274X -oback.cnc       pcb.brd Bot Pads Vias >&2;
 		echo 16;
-		$EAGLE -X -O+ -dGERBER_RS274X	-ofront.cnc	pcb.brd Top Pads Vias >&2;
+		$EAGLEEXE -X -O+ -dGERBER_RS274X -ofront.cnc      pcb.brd Top Pads Vias >&2;
 		echo 33;
-		$EAGLE -X -O+ -dEXCELLON		-odrill.cnc	pcb.brd Drills Holes >&2;
+		$EAGLEEXE -X -O+ -dEXCELLON      -odrill.cnc      pcb.brd Drills Holes >&2;
 		echo 50;
-		$EAGLE -X -O+ -dGERBER_RS274X	-ooutline.cnc	pcb.brd Dimension >&2;
+		$EAGLEEXE -X -O+ -dGERBER_RS274X -ooutline.cnc    pcb.brd Dimension >&2;
 		echo 66;
-		$EAGLE -X -O+ -dPS		-oback_stop.ps	pcb.brd bStop Dimension >&2;
+		$EAGLEEXE -X -O+ -dPS            -oback_stop.ps   pcb.brd bStop Dimension >&2;
 		echo 83;
-		$EAGLE -X -O+ -dPS		-ofront_stop.ps	pcb.brd tStop Dimension >&2;
+		$EAGLEEXE -X -O+ -dPS            -ofront_stop.ps  pcb.brd tStop Dimension >&2;
 		echo 100;
-		) | zenity   --progress --title="[EAGLE] Konvertiere..." --text="Aus EAGLE-Board-Dateien werden Gerber-Dateien generiert..." --auto-close;
+		) | zenity   --progress --title="[EAGLEEXE] Konvertiere..." --text="Aus EAGLEEXE-Board-Dateien werden Gerber-Dateien generiert..." --auto-close;
 
 
 		# Gerber zu G-Code
 		echo "Gerber-Dateien werden zu G-Code konvertiert..."
 		(
 		echo 10;
-		PCB2GCODE --outline outline.cnc --back back.cnc --front front.cnc --drill drill.cnc >&2;
+		$PCB2GCODE --outline outline.cnc >&2;
+		$PCB2GCODE --back    back.cnc  --front   front.cnc  --drill   drill.cnc      >&2;
+	
 		echo 100;
 		) | zenity   --progress --title="[pcb2gcode] Konvertiere..." --text="Aus Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
 
 
 	elif [ ${importfile##*\.} == "fzz" ]; then	# Fritzing-Paket *.fzz
 		unzip ./pcb
-
+5
 		name=$(ls ./*.fz);
 		name="${name%\.*}";
 		mv ./pcb "./pcb.fzz"
@@ -168,7 +173,12 @@ if [ -f "$importfile" ] ; then
 		echo "\nGerber-Dateien werden zu G-Code konvertiert..."
 		(
 		echo 10;
-		$PCB2GCODE --outline "pcb_contour.gm1" --back "pcb_copperBottom.gbl" --front "pcb_copperTop.gtl" --drill "pcb_drill.txt" >&2;
+		$PCB2GCODE --outline "pcb_contour.gm1"      >&2;
+		$PCB2GCODE --back    "pcb_copperBottom.gbl" >&2;
+		$PCB2GCODE --front   "pcb_copperTop.gtl"    >&2;
+		$PCB2GCODE --drill   "pcb_drill.txt"        >&2;
+		
+		
 		echo 100;
 		) | zenity --progress --title="[pcb2gcode] Konvertiere..." --text="Aus den Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
 
@@ -187,14 +197,18 @@ if [ -f "$importfile" ] ; then
 		echo "\nGerber-Dateien werden zu G-Code konvertiert..."
 		(
 		echo 10;
-		$PCB2GCODE --outline "pcb.gml" --back "pcb.gbl" --front "pcb.gtl" --drill "pcb.txt";
+		$PCB2GCODE --outline "pcb.gml";
+		$PCB2GCODE --back    "pcb.gbl";
+		$PCB2GCODE --front   "pcb.gtl";
+		$PCB2GCODE --drill   "pcb.txt";
+		
 		echo 100;
 		) | zenity  --progress --title="[pcb2gcode] Konvertiere..." --text="Aus den Gerber-Dateien wird G-Code generiert..." --pulsate --auto-close;
 
 
 	else
-		echo "Bitte eine EAGLE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen.";
-		zenity  --width 600 --error --text="Bitte eine EAGLE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen." --title="Fehler"
+		echo "Bitte eine EAGLEEXE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen.";
+		zenity  --width 600 --error --text="Bitte eine EAGLEEXE-Board-Datei (*.brd) oder Fritzing-Paket (*.fzz) auswählen." --title="Fehler"
 		exit 1
 	fi
 
