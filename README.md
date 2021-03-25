@@ -11,3 +11,14 @@ apt-get install gcj-jre openjdk openjdk-13 openjdk-13-jre dos2unix build-essenti
 ```
 
 Get eagle from autodesk.com/products/eagle/
+
+~/Desktop/Board2Mill.desktop 
+```
+[Desktop Entry]
+Name=Board2Mill
+Comment=
+Exec=/home/user/board2mill/board2mill.sh
+Terminal=false
+Type=Application
+StartupNotify=true
+```
